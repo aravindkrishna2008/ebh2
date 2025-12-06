@@ -7,7 +7,7 @@ const Camera = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const [view, setView] = useState<'camera' | 'uploads'>('camera');
+  const [view, setView] = useState<"camera" | "uploads">("camera");
   const [isRecording, setIsRecording] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [voiceLevel, setVoiceLevel] = useState(3);
@@ -167,18 +167,18 @@ const Camera = () => {
             <h2 className="text-xs font-bold uppercase tracking-widest opacity-50 mb-4">
               Menu
             </h2>
-            <button 
+            <button
               onClick={() => {
-                setView('uploads');
+                setView("uploads");
                 setIsMenuOpen(false);
               }}
               className="text-3xl font-bold hover:text-[#F45B69] transition-colors"
             >
               Past Uploads
             </button>
-            <button 
+            <button
               onClick={() => {
-                setView('camera');
+                setView("camera");
                 setIsMenuOpen(false);
               }}
               className="text-3xl font-bold hover:text-[#F45B69] transition-colors"
@@ -191,7 +191,7 @@ const Camera = () => {
 
       {/* Main Content Grid */}
       <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
-        {view === 'camera' ? (
+        {view === "camera" ? (
           <>
             {/* Left/Top: Camera Viewfinder */}
             <div className="flex-1 p-4 md:p-8 flex flex-col justify-center items-center relative bg-[#EAE8E0] lg:border-r border-[#111]/10 lg:min-h-0">
@@ -303,7 +303,9 @@ const Camera = () => {
               <div className="mt-4 md:mt-8 relative group">
                 <div
                   className={`absolute inset-0 bg-[#F45B69] rounded-full blur-xl opacity-20 transition-opacity duration-500 ${
-                    isRecording ? "opacity-40 scale-150" : "group-hover:opacity-30"
+                    isRecording
+                      ? "opacity-40 scale-150"
+                      : "group-hover:opacity-30"
                   }`}
                 ></div>
                 <button
@@ -329,7 +331,7 @@ const Camera = () => {
             </div>
           </>
         ) : (
-          <PastUploads onBack={() => setView('camera')} />
+          <PastUploads onBack={() => setView("camera")} />
         )}
       </main>
 
