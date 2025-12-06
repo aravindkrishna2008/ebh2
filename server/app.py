@@ -23,6 +23,13 @@ from autotune import (
     PYWORLD_AVAILABLE,
     NOISEREDUCE_AVAILABLE
 )
+try:
+    from pedalboard import Pedalboard, NoiseGate, Compressor, HighpassFilter, Reverb, Limiter
+    PEDALBOARD_AVAILABLE = True
+except ImportError:
+    PEDALBOARD_AVAILABLE = False
+    print("Pedalboard not available - crazy mode effects will be skipped")
+
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import interp1d
 from beat_generator import BeatGenerator
@@ -109,6 +116,17 @@ def get_processing_params(music_type, voice_level, beats_level, noise_level):
             'compression_ratio': 2.5,
             'enthusiasm_intensity': 0.15,
             'clarity_intensity': 0.5
+        },
+        'crazy': {
+            'autotune_strength': 0,
+            'scale': 'chromatic',
+            'low_gain': 0,
+            'mid_gain': 0,
+            'high_gain': 0,
+            'compression_threshold': 0.6,
+            'compression_ratio': 3.0,
+            'enthusiasm_intensity': 0,
+            'clarity_intensity': 0
         }
     }
     
@@ -221,6 +239,28 @@ def fast_noise_reduce(y, sr, intensity=0.5):
         except:
             pass
     return y
+
+def apply_crazy_effects(y, sr):
+    if not PEDALBOARD_AVAILABLE:
+        return y
+    
+    try:
+        board = Pedalboard([
+            HighpassFilter(cutoff_frequency_hz=80),
+            NoiseGate(threshold_db=-40, ratio=4, release_ms=250),
+            Compressor(threshold_db=-16, ratio=3, attack_ms=10, release_ms=100),
+            Reverb(room_size=0.3, wet_level=0.2),
+            Limiter(threshold_db=-1.0)
+        ])
+        
+        # Pedalboard expects (channels, samples) or just samples if mono
+        # y is (samples,)
+        # It returns the same shape usually
+        processed = board(y, sr)
+        return processed
+    except Exception as e:
+        print(f"Pedalboard effect failed: {e}")
+        return y
 
 def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_fn=None):
     hop_length = 512
@@ -481,7 +521,11 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
             update_job_status(job_id, 3, 25, "Background noise reduced")
         
         update_job_status(job_id, 4, 28, "Analyzing vocal frequencies...")
-        y = enhance_clarity(y, sr, preserve_details=True, intensity=params.get('clarity_intensity', 0.8))
+        if music_type == 'crazy':
+            update_job_status(job_id, 4, 30, "Applying crazy effects...")
+            y = apply_crazy_effects(y, sr)
+        else:
+            y = enhance_clarity(y, sr, preserve_details=True, intensity=params.get('clarity_intensity', 0.8))
         update_job_status(job_id, 4, 35, "Vocal clarity enhanced")
         
         pitch_stats_processed = {}

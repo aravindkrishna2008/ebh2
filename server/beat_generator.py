@@ -4,6 +4,300 @@ import soundfile as sf
 import librosa
 from pydub import AudioSegment
 from scipy.interpolate import interp1d
+import scipy.signal
+
+class Synthesizer:
+    def __init__(self, sr=44100):
+        self.sr = sr
+
+    def generate_sine(self, freq, duration, envelope=None):
+        t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+        wave = np.sin(2 * np.pi * freq * t)
+        if envelope is not None:
+            wave *= envelope
+        return wave
+
+    def generate_saw(self, freq, duration, envelope=None):
+        t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+        wave = scipy.signal.sawtooth(2 * np.pi * freq * t)
+        if envelope is not None:
+            wave *= envelope
+        return wave
+
+    def generate_square(self, freq, duration, envelope=None):
+        t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+        wave = scipy.signal.square(2 * np.pi * freq * t)
+        if envelope is not None:
+            wave *= envelope
+        return wave
+
+    def generate_noise(self, duration, envelope=None):
+        wave = np.random.uniform(-1, 1, int(self.sr * duration))
+        if envelope is not None:
+            wave *= envelope
+        return wave
+
+    def adsr_envelope(self, duration, attack=0.01, decay=0.1, sustain=0.7, release=0.1):
+        total_samples = int(self.sr * duration)
+        attack_samples = int(self.sr * attack)
+        decay_samples = int(self.sr * decay)
+        release_samples = int(self.sr * release)
+        sustain_samples = total_samples - attack_samples - decay_samples - release_samples
+        
+        if sustain_samples < 0:
+            factor = total_samples / (attack_samples + decay_samples + release_samples)
+            attack_samples = int(attack_samples * factor)
+            decay_samples = int(decay_samples * factor)
+            release_samples = int(release_samples * factor)
+            sustain_samples = 0
+
+        envelope = np.concatenate([
+            np.linspace(0, 1, attack_samples),
+            np.linspace(1, sustain, decay_samples),
+            np.full(sustain_samples, sustain),
+            np.linspace(sustain, 0, release_samples)
+        ])
+        
+        if len(envelope) < total_samples:
+            envelope = np.pad(envelope, (0, total_samples - len(envelope)))
+        else:
+            envelope = envelope[:total_samples]
+            
+        return envelope
+
+    def kick(self, style='pop', variation=0):
+        duration = 0.4
+        if style == 'rap':
+            if variation == 0: # Deep 808
+                duration = 0.6 
+                t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+                freq = np.linspace(100, 40, len(t)) 
+                wave = np.sin(2 * np.pi * freq * t)
+                env = np.exp(-4 * t) 
+                wave = np.clip(wave * 1.5, -1, 1) 
+            elif variation == 1: # Punchy Boom Bap
+                duration = 0.3
+                t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+                freq = np.linspace(150, 60, len(t))
+                wave = np.sin(2 * np.pi * freq * t)
+                env = np.exp(-15 * t) # Fast decay
+                wave = np.clip(wave * 1.2, -1, 1)
+            elif variation == 2: # Distorted
+                duration = 0.5
+                t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+                freq = np.linspace(120, 40, len(t))
+                wave = scipy.signal.square(2 * np.pi * freq * t) # Square for grit
+                # Lowpass to tame it
+                b, a = scipy.signal.butter(2, 200/(self.sr/2), btype='low')
+                wave = scipy.signal.lfilter(b, a, wave)
+                env = np.exp(-5 * t)
+                wave = wave * env
+            elif variation == 3: # Soft/Round
+                duration = 0.4
+                t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+                freq = np.linspace(90, 45, len(t))
+                wave = np.sin(2 * np.pi * freq * t)
+                env = np.exp(-6 * t)
+            else: # Clicky
+                duration = 0.3
+                t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+                freq = np.linspace(200, 50, len(t))
+                wave = np.sin(2 * np.pi * freq * t)
+                env = np.exp(-12 * t)
+                # Add click
+                click = self.generate_noise(0.01, self.adsr_envelope(0.01, 0.001, 0.005, 0, 0.004))
+                wave[:len(click)] += click * 0.5
+                
+            return wave
+            
+        elif style == 'chill':
+            duration = 0.3
+            t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+            freq = np.linspace(120, 60, len(t))
+            wave = np.sin(2 * np.pi * freq * t)
+            env = np.exp(-8 * t)
+            return wave * env
+        else: # Pop
+            t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+            freq = np.linspace(150, 50, len(t))
+            wave = np.sin(2 * np.pi * freq * t)
+            env = np.exp(-10 * t)
+            return wave * env
+
+    def snare(self, style='pop', variation=0):
+        duration = 0.25
+        if style == 'rap':
+            if variation == 0: # Trap Clap
+                noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.01, 0.15, 0.0, 0.05))
+                b, a = scipy.signal.butter(2, [800/(self.sr/2), 2000/(self.sr/2)], btype='band')
+                noise = scipy.signal.lfilter(b, a, noise)
+                return noise * 0.9
+            elif variation == 1: # Boom Bap Snare
+                tone = self.generate_sine(180, duration, self.adsr_envelope(duration, 0.005, 0.1, 0, 0.05))
+                noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.005, 0.2, 0, 0.05))
+                b, a = scipy.signal.butter(2, 1000/(self.sr/2), btype='low') # Darker noise
+                noise = scipy.signal.lfilter(b, a, noise)
+                return (tone * 0.6 + noise * 0.7)
+            elif variation == 2: # Rimshot
+                tone = self.generate_sine(500, 0.05, self.adsr_envelope(0.05, 0.001, 0.02, 0, 0.02))
+                return tone * 0.8
+            elif variation == 3: # Snap
+                noise = self.generate_noise(0.05, self.adsr_envelope(0.05, 0.001, 0.03, 0, 0.01))
+                b, a = scipy.signal.butter(2, 2000/(self.sr/2), btype='high')
+                noise = scipy.signal.lfilter(b, a, noise)
+                return noise * 0.6
+            else: # Industrial
+                noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.001, 0.2, 0, 0.05))
+                # Comb filter for metallic sound
+                delay = int(0.005 * self.sr)
+                comb = np.zeros_like(noise)
+                for i in range(len(noise)):
+                    if i >= delay:
+                        comb[i] = noise[i] + 0.8 * comb[i-delay]
+                    else:
+                        comb[i] = noise[i]
+                return comb * 0.5
+
+        elif style == 'chill':
+            # Rimshot / Soft snare
+            tone = self.generate_sine(400, duration, self.adsr_envelope(duration, 0.001, 0.05, 0.0, 0.05))
+            return tone * 0.4
+        else: # Pop
+            tone = self.generate_sine(180, duration, self.adsr_envelope(duration, 0.005, 0.1, 0.0, 0.1))
+            noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.005, 0.15, 0.0, 0.05))
+            return (tone * 0.5 + noise * 0.8)
+
+    def hihat(self, style='pop', variation=0):
+        duration = 0.1
+        if style == 'rap':
+            if variation == 0: # Trap Tick
+                duration = 0.05
+                noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.001, 0.03, 0.0, 0.01))
+                noise = np.diff(noise, prepend=0)
+                return noise * 0.7
+            elif variation == 1: # Shaker
+                duration = 0.1
+                noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.02, 0.05, 0, 0.03))
+                b, a = scipy.signal.butter(2, 3000/(self.sr/2), btype='high')
+                noise = scipy.signal.lfilter(b, a, noise)
+                return noise * 0.5
+            elif variation == 2: # Open Hat
+                duration = 0.3
+                noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.01, 0.2, 0, 0.05))
+                b, a = scipy.signal.butter(2, 4000/(self.sr/2), btype='high')
+                noise = scipy.signal.lfilter(b, a, noise)
+                return noise * 0.6
+            elif variation == 3: # Lo-fi
+                duration = 0.08
+                noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.005, 0.05, 0, 0.02))
+                # Bitcrush simulation (downsample)
+                noise = noise[::4].repeat(4)[:len(noise)]
+                return noise * 0.6
+            else: # Metallic
+                duration = 0.1
+                noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.001, 0.08, 0, 0.01))
+                # Ring mod
+                t = np.linspace(0, duration, len(noise))
+                mod = np.sin(2 * np.pi * 2000 * t)
+                return noise * mod * 0.8
+
+        elif style == 'chill':
+            # Shaker-like
+            noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.02, 0.05, 0.0, 0.03))
+            b, a = scipy.signal.butter(2, 4000/(self.sr/2), btype='high')
+            noise = scipy.signal.lfilter(b, a, noise)
+            return noise * 0.3
+        else: # Pop
+            noise = self.generate_noise(duration, self.adsr_envelope(duration, 0.001, 0.05, 0.0, 0.04))
+            noise = np.diff(noise, prepend=0)
+            return noise * 0.6
+
+    def bass(self, freq, duration, style='pop', variation=0):
+        if style == 'rap':
+            if variation == 0: # 808 Sine Saturation
+                wave = self.generate_sine(freq, duration, self.adsr_envelope(duration, 0.05, 0.4, 0.6, 0.2))
+                wave = np.clip(wave * 2.0, -1, 1) 
+                return wave * 0.7
+            elif variation == 1: # Square Bass
+                wave = self.generate_square(freq, duration, self.adsr_envelope(duration, 0.05, 0.3, 0.5, 0.1))
+                b, a = scipy.signal.butter(2, 400/(self.sr/2), btype='low')
+                wave = scipy.signal.lfilter(b, a, wave)
+                return wave * 0.6
+            elif variation == 2: # Saw Bass
+                wave = self.generate_saw(freq, duration, self.adsr_envelope(duration, 0.1, 0.4, 0.7, 0.2))
+                b, a = scipy.signal.butter(2, 600/(self.sr/2), btype='low')
+                wave = scipy.signal.lfilter(b, a, wave)
+                return wave * 0.6
+            elif variation == 3: # Plucky
+                wave = self.generate_sine(freq, duration, self.adsr_envelope(duration, 0.01, 0.2, 0.0, 0.1))
+                wave += self.generate_sine(freq*2, duration, self.adsr_envelope(duration, 0.01, 0.1, 0.0, 0.1)) * 0.5
+                return wave * 0.7
+            else: # Sub
+                wave = self.generate_sine(freq, duration, self.adsr_envelope(duration, 0.1, 0.5, 0.8, 0.2))
+                return wave * 0.8
+
+        elif style == 'chill':
+            # Smooth Sine
+            wave = self.generate_sine(freq, duration, self.adsr_envelope(duration, 0.1, 0.2, 0.8, 0.2))
+            return wave * 0.6
+        else: # Pop
+            wave = self.generate_saw(freq, duration, self.adsr_envelope(duration, 0.05, 0.2, 0.8, 0.1))
+            wave = np.convolve(wave, np.ones(5)/5, mode='same')
+            return wave * 0.6
+
+    def chord(self, freqs, duration, style='pop', variation=0):
+        wave = np.zeros(int(self.sr * duration))
+        env = self.adsr_envelope(duration, 0.1, 0.2, 0.6, 0.5)
+        
+        if style == 'rap':
+            if variation == 0: # Dark Pad
+                for f in freqs:
+                    wave += self.generate_saw(f, duration, env) * 0.3
+                b, a = scipy.signal.butter(2, 800/(self.sr/2), btype='low')
+                wave = scipy.signal.lfilter(b, a, wave)
+            elif variation == 1: # Plucky Bells
+                env_bell = self.adsr_envelope(duration, 0.01, 0.3, 0.0, 0.1)
+                for f in freqs:
+                    wave += self.generate_sine(f, duration, env_bell) * 0.4
+                    wave += self.generate_sine(f*2, duration, env_bell) * 0.1
+            elif variation == 2: # Strings
+                env_str = self.adsr_envelope(duration, 0.5, 0.2, 0.8, 0.5)
+                for f in freqs:
+                    wave += self.generate_saw(f, duration, env_str) * 0.2
+                    wave += self.generate_saw(f*1.01, duration, env_str) * 0.15
+                b, a = scipy.signal.butter(2, 1500/(self.sr/2), btype='low')
+                wave = scipy.signal.lfilter(b, a, wave)
+            elif variation == 3: # Organ
+                for f in freqs:
+                    wave += self.generate_sine(f, duration, env) * 0.3
+                    wave += self.generate_sine(f*2, duration, env) * 0.2
+                    wave += self.generate_sine(f*4, duration, env) * 0.1
+            else: # Wobble
+                t = np.linspace(0, duration, int(self.sr * duration), endpoint=False)
+                lfo = 1 + 0.01 * np.sin(2 * np.pi * 3 * t)
+                for f in freqs:
+                    wave += self.generate_saw(f, duration, env) * 0.3
+                wave = wave * lfo
+                
+            return wave * 0.5
+        elif style == 'chill':
+            # E-Piano (Sine + Harmonics)
+            for f in freqs:
+                wave += self.generate_sine(f, duration, env) * 0.4
+                wave += self.generate_sine(f*2, duration, env) * 0.1
+                wave += self.generate_sine(f*3, duration, env) * 0.05
+            # Tremolo
+            t = np.linspace(0, duration, len(wave))
+            tremolo = 1 + 0.2 * np.sin(2 * np.pi * 5 * t)
+            return wave * tremolo * 0.5
+        else: # Pop
+            for f in freqs:
+                wave += self.generate_saw(f, duration, env) * 0.3
+                wave += self.generate_saw(f * 1.01, duration, env) * 0.2
+                wave += self.generate_saw(f * 0.99, duration, env) * 0.2
+            wave = np.convolve(wave, np.ones(10)/10, mode='same')
+            return wave * 0.4
+
 
 class BeatGenerator:
     def __init__(self, vocal_path, style='rap', intensity=3):
@@ -255,8 +549,210 @@ class BeatGenerator:
         print(f"Beat adjustment: {final_adjustment} dB (Base: {base_adjustment}, Intensity: {self.intensity})")
         return final_adjustment
     
+    def generate_crazy_beat(self, output_path):
+        print("Generating Crazy (Enhanced Rap) beat...")
+        
+        # 1. Setup Synthesizer and basics
+        sr = 44100
+        synth = Synthesizer(sr)
+        
+        # Use existing beat map
+        if not self.beat_times:
+            self.generate_beat_map()
+            
+        variation = max(0, min(4, self.intensity - 1)) # Map 1-5 to 0-4
+        genre = 'rap'
+        
+        total_samples = int(sr * self.duration)
+        drums = np.zeros(total_samples)
+        bass = np.zeros(total_samples)
+        chords = np.zeros(total_samples)
+        
+        full_beat_times = np.array(self.beat_times)
+        
+        def get_beat_time(beat_idx):
+            idx_int = int(beat_idx)
+            frac = beat_idx - idx_int
+            
+            if idx_int < 0: return 0.0
+            if idx_int >= len(full_beat_times) - 1:
+                last_interval = full_beat_times[-1] - full_beat_times[-2] if len(full_beat_times) > 1 else 60/120
+                return full_beat_times[-1] + (beat_idx - (len(full_beat_times)-1)) * last_interval
+                
+            t1 = full_beat_times[idx_int]
+            t2 = full_beat_times[idx_int+1]
+            return t1 + frac * (t2 - t1)
+            
+        def add_sample(track, sample, start_time):
+            start_sample = int(start_time * sr)
+            
+            if start_sample < 0:
+                if start_sample + len(sample) <= 0: return
+                offset = -start_sample
+                sample = sample[offset:]
+                start_sample = 0
+            
+            if start_sample >= len(track): return
+            
+            end_sample = start_sample + len(sample)
+            if end_sample > len(track):
+                sample = sample[:len(track)-start_sample]
+                end_sample = len(track)
+            
+            if len(sample) == 0: return
+            
+            track[start_sample:end_sample] += sample
+
+        # 2. Logic from voice_enhancer/main.py
+        kick_sample = synth.kick(style=genre, variation=variation)
+        snare_sample = synth.snare(style=genre, variation=variation)
+        hihat_sample = synth.hihat(style=genre, variation=variation)
+        
+        # Harmony setup
+        note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        base_freqs = [261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392.00, 415.30, 440.00, 466.16, 493.88]
+        key_idx = 0 # Default C, could try to detect or use param
+        
+        # Minor scale for rap
+        scale_intervals = [0, 2, 3, 5, 7, 8, 10]
+        scale_freqs = []
+        for interval in scale_intervals:
+            idx = (key_idx + interval) % 12
+            freq = base_freqs[idx]
+            if (key_idx + interval) >= 12: freq *= 2
+            scale_freqs.append(freq)
+            
+        # Rap Progressions
+        progs = [
+            [[0, 2, 4], [0, 2, 4], [5, 0, 2], [4, 6, 1]], # i i VI V
+            [[0, 2, 4], [5, 0, 2], [0, 2, 4], [5, 0, 2]], # i VI i VI
+            [[0, 2, 4], [0, 2, 4], [3, 5, 0], [4, 6, 1]], # i i iv V
+            [[0, 2, 4], [2, 4, 6], [0, 2, 4], [4, 6, 1]], # i III i V
+            [[5, 0, 2], [4, 6, 1], [5, 0, 2], [0, 2, 4]]  # VI V VI i
+        ]
+        progression = progs[variation % len(progs)]
+        
+        total_beats = len(full_beat_times)
+        
+        for i in range(total_beats):
+            current_time = get_beat_time(i)
+            
+            # Drums
+            if variation == 0: # Standard Trap
+                if i % 4 == 0: add_sample(drums, kick_sample, get_beat_time(i))
+                if i % 4 == 2: add_sample(drums, snare_sample, get_beat_time(i))
+                if i % 2 == 0:
+                    add_sample(drums, hihat_sample, get_beat_time(i))
+                    add_sample(drums, hihat_sample, get_beat_time(i + 0.5))
+                else:
+                    add_sample(drums, hihat_sample, get_beat_time(i))
+                    add_sample(drums, hihat_sample, get_beat_time(i + 0.25))
+                    add_sample(drums, hihat_sample, get_beat_time(i + 0.5))
+                    add_sample(drums, hihat_sample, get_beat_time(i + 0.75))
+            elif variation == 1: # Boom Bap
+                if i % 4 == 0: add_sample(drums, kick_sample, get_beat_time(i))
+                if i % 4 == 2: add_sample(drums, snare_sample, get_beat_time(i))
+                if i % 4 == 1: add_sample(drums, kick_sample, get_beat_time(i + 0.75))
+                if i % 4 == 3: add_sample(drums, kick_sample, get_beat_time(i + 0.25))
+                add_sample(drums, hihat_sample, get_beat_time(i))
+                add_sample(drums, hihat_sample, get_beat_time(i + 0.66))
+            elif variation == 2: # Drill-ish
+                if i % 4 == 0: add_sample(drums, kick_sample, get_beat_time(i))
+                if i % 4 == 2: add_sample(drums, snare_sample, get_beat_time(i))
+                if i % 4 == 3: add_sample(drums, kick_sample, get_beat_time(i + 0.5))
+                add_sample(drums, hihat_sample, get_beat_time(i))
+                add_sample(drums, hihat_sample, get_beat_time(i + 0.33))
+                add_sample(drums, hihat_sample, get_beat_time(i + 0.66))
+            elif variation == 3: # Minimal
+                if i % 4 == 0: add_sample(drums, kick_sample, get_beat_time(i))
+                if i % 4 == 2: add_sample(drums, snare_sample, get_beat_time(i))
+                if i % 2 == 0: add_sample(drums, hihat_sample, get_beat_time(i))
+            else: # Industrial
+                if i % 4 == 0: add_sample(drums, kick_sample, get_beat_time(i))
+                if i % 4 == 1: add_sample(drums, kick_sample, get_beat_time(i))
+                if i % 4 == 2: add_sample(drums, snare_sample, get_beat_time(i))
+                if i % 4 == 3: add_sample(drums, kick_sample, get_beat_time(i))
+                add_sample(drums, hihat_sample, get_beat_time(i))
+                add_sample(drums, hihat_sample, get_beat_time(i + 0.25))
+                add_sample(drums, hihat_sample, get_beat_time(i + 0.5))
+                add_sample(drums, hihat_sample, get_beat_time(i + 0.75))
+            
+            # Bass & Chords
+            bar = i // 4
+            chord_idx = bar % 4
+            chord_indices = progression[chord_idx]
+            
+            root_scale_idx = chord_indices[0]
+            root_freq = scale_freqs[root_scale_idx] / 2
+            
+            # Bass pattern
+            if i % 4 == 0: # Beat 1
+                dur = get_beat_time(i+2) - get_beat_time(i)
+                add_sample(bass, synth.bass(root_freq, dur, style=genre, variation=variation), get_beat_time(i))
+            if i % 4 == 2 and variation % 2 == 1: # Beat 3
+                dur = get_beat_time(i+2) - get_beat_time(i)
+                add_sample(bass, synth.bass(root_freq, dur, style=genre, variation=variation), get_beat_time(i + 0.5))
+                
+            # Chords (Once per bar)
+            if i % 4 == 0:
+                chord_freqs = [scale_freqs[idx % 7] for idx in chord_indices]
+                dur = get_beat_time(i+4) - get_beat_time(i)
+                chord_sample = synth.chord(chord_freqs, dur, style=genre, variation=variation)
+                add_sample(chords, chord_sample, get_beat_time(i))
+                
+        # 3. Mixing
+        def normalize(arr):
+            m = np.max(np.abs(arr))
+            if m > 0: return arr / m
+            return arr
+
+        vocal_level = 1.0 # Not used here, this function generates beat only
+        drum_level = 0.5 # Boost drums a bit
+        bass_level = 0.4
+        chord_level = 0.3
+        
+        final_mix = (
+            normalize(drums) * drum_level +
+            normalize(bass) * bass_level +
+            normalize(chords) * chord_level
+        )
+        
+        final_mix = np.clip(final_mix, -1.0, 1.0)
+        
+        # Save temp beat
+        beat_path = self.vocal_path.rsplit('.', 1)[0] + '_crazy_beat.wav'
+        sf.write(beat_path, final_mix, sr)
+        
+        return beat_path
+
     def mix_tracks(self, output_path):
         print(f"Generating {self.style} beat...")
+        
+        if self.style == 'crazy':
+            beat_path = self.generate_crazy_beat(output_path)
+            
+            print("Mixing with vocals (Crazy mode)...")
+            vocal = AudioSegment.from_file(self.vocal_path)
+            beat_audio = AudioSegment.from_wav(beat_path)
+            
+            if len(beat_audio) > len(vocal):
+                beat_audio = beat_audio[:len(vocal)]
+            else:
+                beat_audio = beat_audio + AudioSegment.silent(duration=len(vocal) - len(beat_audio))
+            
+            # Crazy volume adjustment
+            beat_adjustment = -8 + (self.intensity - 3) * 2
+            beat_audio = beat_audio + beat_adjustment
+            
+            mixed = vocal.overlay(beat_audio)
+            mixed.export(output_path, format='wav')
+            
+            if os.path.exists(beat_path):
+                os.remove(beat_path)
+                
+            return output_path
+
+        # Standard mode
         self.generate_beat_map()
         
         drums = self.create_drum_pattern()
