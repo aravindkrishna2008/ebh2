@@ -25,6 +25,7 @@ from autotune import (
 )
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import interp1d
+from beat_generator import BeatGenerator
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -65,6 +66,17 @@ def get_processing_params(music_type, voice_level, beats_level, noise_level):
             'enthusiasm_intensity': 0.4,
             'clarity_intensity': 0.7
         },
+        'rap': {  # Alias for trap
+            'autotune_strength': 0.7,
+            'scale': 'minor',
+            'low_gain': 4,
+            'mid_gain': -1,
+            'high_gain': 2,
+            'compression_threshold': 0.5,
+            'compression_ratio': 6.0,
+            'enthusiasm_intensity': 0.4,
+            'clarity_intensity': 0.7
+        },
         'pop': {
             'autotune_strength': 0.5,
             'scale': 'major',
@@ -77,6 +89,17 @@ def get_processing_params(music_type, voice_level, beats_level, noise_level):
             'clarity_intensity': 0.9
         },
         'lofi': {
+            'autotune_strength': 0.25,
+            'scale': 'chromatic',
+            'low_gain': 2,
+            'mid_gain': 0,
+            'high_gain': -2,
+            'compression_threshold': 0.75,
+            'compression_ratio': 2.5,
+            'enthusiasm_intensity': 0.15,
+            'clarity_intensity': 0.5
+        },
+        'chill': {  # Alias for lofi
             'autotune_strength': 0.25,
             'scale': 'chromatic',
             'low_gain': 2,
@@ -101,6 +124,9 @@ def get_processing_params(music_type, voice_level, beats_level, noise_level):
     
     noise_reduction = (6 - noise_level) / 5.0
     params['noise_reduction'] = 0.3 + (noise_reduction * 0.4)
+    
+    # Ensure beats_level is int
+    params['beats_level'] = beats_level
     
     return params
 
@@ -383,7 +409,38 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
             y = y * (0.95 / y_max)
         
         update_job_status(job_id, 14, 97, "Encoding final audio...")
-        sf.write(output_path, y, sr)
+        
+        beats_level = int(params.get('beats_level', 0))
+        print(f"[{job_id}] Beats level: {beats_level}, Music type: {music_type}")
+        
+        if beats_level > 0:
+            update_job_status(job_id, 14, 98, "Generating beat...")
+            
+            # Save temp processed vocal for mixing
+            temp_vocal_path = output_path.rsplit('.', 1)[0] + '_temp_vocal.wav'
+            sf.write(temp_vocal_path, y, sr)
+            print(f"[{job_id}] Saved temp vocal to {temp_vocal_path}")
+            
+            try:
+                bg = BeatGenerator(
+                    vocal_path=temp_vocal_path,
+                    style=music_type,
+                    intensity=beats_level
+                )
+                print(f"[{job_id}] Initialized BeatGenerator with style={music_type}")
+                bg.mix_tracks(output_path)
+                print(f"[{job_id}] Beat generation and mixing successful")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"Beat generation failed: {e}")
+                # Fallback to just saving vocals
+                sf.write(output_path, y, sr)
+            finally:
+                if os.path.exists(temp_vocal_path):
+                    os.remove(temp_vocal_path)
+        else:
+            sf.write(output_path, y, sr)
         
         if converted_path and os.path.exists(converted_path):
             os.remove(converted_path)
@@ -493,6 +550,7 @@ def get_progress(job_id):
             
             if job['status'] in ['complete', 'error']:
                 print(f"[{job_id}] SSE connection closing")
+                time.sleep(1.0)
                 break
             
             time.sleep(0.5)

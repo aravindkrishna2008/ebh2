@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useEffect, useState } from "react";
+import Image from "next/image";
 import PastUploads from "./PastUploads";
 
 interface ProgressData {
@@ -17,15 +18,17 @@ const Camera = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const [view, setView] = useState<'camera' | 'uploads'>('camera');
+  const [view, setView] = useState<"camera" | "uploads">("camera");
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [voiceLevel, setVoiceLevel] = useState(3);
   const [beatsLevel, setBeatsLevel] = useState(3);
   const [noiseLevel, setNoiseLevel] = useState(3);
-  const [musicType, setMusicType] = useState<"trap" | "pop" | "lofi">("lofi");
-  const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(null);
+  const [musicType, setMusicType] = useState<"rap" | "chill">("chill");
+  const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(
+    null
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [processingMessage, setProcessingMessage] = useState("");
@@ -100,57 +103,65 @@ const Camera = () => {
         setIsProcessing(true);
         setProgress(0);
         setProcessingMessage("Uploading audio...");
-        
+
         try {
           const response = await fetch("http://localhost:5000", {
             method: "POST",
             body: formData,
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             const jobId = data.job_id;
-            
-            const eventSource = new EventSource(`http://localhost:5000/progress/${jobId}`);
-            
+
+            const eventSource = new EventSource(
+              `http://localhost:5000/progress/${jobId}`
+            );
+
             eventSource.onmessage = async (event) => {
               try {
                 const progressData: ProgressData = JSON.parse(event.data);
                 console.log("Progress update:", progressData);
-                
+
                 setProgress(progressData.progress);
                 setProcessingMessage(progressData.message);
-                
-                if (progressData.status === 'complete') {
+
+                if (progressData.status === "complete") {
                   eventSource.close();
                   console.log("Processing complete, downloading audio...");
-                  
+
                   try {
-                    const audioResponse = await fetch(`http://localhost:5000/download/${jobId}`);
+                    const audioResponse = await fetch(
+                      `http://localhost:5000/download/${jobId}`
+                    );
                     console.log("Download response:", audioResponse.status);
-                    
+
                     if (audioResponse.ok) {
                       const audioBlob = await audioResponse.blob();
                       console.log("Audio blob size:", audioBlob.size);
                       const audioUrl = URL.createObjectURL(audioBlob);
-                      
+
                       if (processedAudioUrl) {
                         URL.revokeObjectURL(processedAudioUrl);
                       }
-                      
+
                       setProcessedAudioUrl(audioUrl);
                       console.log("Audio URL set:", audioUrl);
                     } else {
-                      console.error("Download failed:", audioResponse.status, await audioResponse.text());
+                      console.error(
+                        "Download failed:",
+                        audioResponse.status,
+                        await audioResponse.text()
+                      );
                     }
                   } catch (downloadError) {
                     console.error("Download error:", downloadError);
                   }
-                  
+
                   setIsProcessing(false);
                   setProgress(0);
                   setProcessingMessage("");
-                } else if (progressData.status === 'error') {
+                } else if (progressData.status === "error") {
                   eventSource.close();
                   console.error("Processing error:", progressData.error);
                   setIsProcessing(false);
@@ -158,10 +169,14 @@ const Camera = () => {
                   setProcessingMessage("");
                 }
               } catch (parseError) {
-                console.error("Failed to parse progress data:", parseError, event.data);
+                console.error(
+                  "Failed to parse progress data:",
+                  parseError,
+                  event.data
+                );
               }
             };
-            
+
             eventSource.onerror = (err) => {
               console.error("EventSource error:", err);
               eventSource.close();
@@ -223,17 +238,15 @@ const Camera = () => {
   return (
     <div className="min-h-screen w-full bg-[#F4F4F0] text-[#111] font-sans flex flex-col relative overflow-hidden selection:bg-[#F45B69] selection:text-white">
       <header className="p-4 md:p-6 flex justify-between items-center border-b border-[#111]/10 bg-[#F4F4F0] z-50 relative">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#111] rounded-full flex items-center justify-center">
-            <div className="w-3 h-3 bg-[#F45B69] rounded-full animate-pulse"></div>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight lowercase leading-none">
-              i<span className="text-[#F45B69]">o</span>
-            </h1>
-            <p className="text-[10px] uppercase tracking-widest opacity-50 font-medium">
-              System 14
-            </p>
+        <div className="flex items-center">
+          <div className="relative h-10 w-40">
+            <Image
+              src="/image.png"
+              alt="System 14"
+              fill
+              className="object-contain object-left"
+              priority
+            />
           </div>
         </div>
 
@@ -269,18 +282,18 @@ const Camera = () => {
             <h2 className="text-xs font-bold uppercase tracking-widest opacity-50 mb-4">
               Menu
             </h2>
-            <button 
+            <button
               onClick={() => {
-                setView('uploads');
+                setView("uploads");
                 setIsMenuOpen(false);
               }}
               className="text-3xl font-bold hover:text-[#F45B69] transition-colors"
             >
               Past Uploads
             </button>
-            <button 
+            <button
               onClick={() => {
-                setView('camera');
+                setView("camera");
                 setIsMenuOpen(false);
               }}
               className="text-3xl font-bold hover:text-[#F45B69] transition-colors"
@@ -292,7 +305,7 @@ const Camera = () => {
       </header>
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
-        {view === 'camera' ? (
+        {view === "camera" ? (
           <>
             <div className="flex-1 p-4 md:p-8 flex flex-col justify-center items-center relative bg-[#EAE8E0] lg:border-r border-[#111]/10 lg:min-h-0">
               <div className="relative w-full max-w-2xl aspect-[4/3] md:aspect-video bg-[#111] rounded-2xl overflow-hidden shadow-2xl ring-1 ring-black/5 group transition-all duration-500 hover:shadow-3xl">
@@ -359,10 +372,10 @@ const Camera = () => {
                   <div className="h-px flex-1 bg-[#111]/10 ml-4"></div>
                 </div>
                 <div className="flex gap-2 p-1 bg-[#EAE8E0] rounded-xl">
-                  {["trap", "pop", "lofi"].map((type) => (
+                  {["rap", "chill"].map((type) => (
                     <button
                       key={type}
-                      onClick={() => setMusicType(type as "trap" | "pop" | "lofi")}
+                      onClick={() => setMusicType(type as "rap" | "chill")}
                       className={`flex-1 py-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
                         musicType === type
                           ? "bg-white text-[#111] shadow-sm scale-100"
@@ -396,7 +409,9 @@ const Camera = () => {
               <div className="mt-4 md:mt-8 relative group">
                 <div
                   className={`absolute inset-0 bg-[#F45B69] rounded-full blur-xl opacity-20 transition-opacity duration-500 ${
-                    isRecording || isProcessing ? "opacity-40 scale-150" : "group-hover:opacity-30"
+                    isRecording || isProcessing
+                      ? "opacity-40 scale-150"
+                      : "group-hover:opacity-30"
                   }`}
                 ></div>
                 <button
@@ -423,7 +438,11 @@ const Camera = () => {
                   )}
                 </button>
                 <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-[10px] font-bold uppercase tracking-widest text-[#111]/30 whitespace-nowrap">
-                  {isProcessing ? "Processing..." : isRecording ? "Tap to Stop" : "Tap to Record"}
+                  {isProcessing
+                    ? "Processing..."
+                    : isRecording
+                    ? "Tap to Stop"
+                    : "Tap to Record"}
                 </div>
               </div>
 
@@ -433,11 +452,13 @@ const Camera = () => {
                     <label className="text-xs font-bold uppercase tracking-widest text-[#111]/40">
                       Processing
                     </label>
-                    <span className="text-xs font-bold text-[#F45B69]">{progress}%</span>
+                    <span className="text-xs font-bold text-[#F45B69]">
+                      {progress}%
+                    </span>
                   </div>
                   <div className="bg-[#EAE8E0] rounded-2xl p-5">
                     <div className="w-full h-2 bg-[#111]/10 rounded-full overflow-hidden mb-4">
-                      <div 
+                      <div
                         className="h-full bg-gradient-to-r from-[#F45B69] to-[#FF8A80] rounded-full transition-all duration-300 ease-out"
                         style={{ width: `${progress}%` }}
                       ></div>
@@ -447,9 +468,13 @@ const Camera = () => {
                         <div className="w-2 h-2 bg-[#F45B69] rounded-full animate-pulse"></div>
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-[#111]/80">{processingMessage}</p>
+                        <p className="text-sm font-medium text-[#111]/80">
+                          {processingMessage}
+                        </p>
                         <p className="text-[10px] uppercase tracking-widest text-[#111]/40 mt-0.5">
-                          {progress < 100 ? `${progress}% complete` : "Finalizing..."}
+                          {progress < 100
+                            ? `${progress}% complete`
+                            : "Finalizing..."}
                         </p>
                       </div>
                     </div>
@@ -510,7 +535,7 @@ const Camera = () => {
             </div>
           </>
         ) : (
-          <PastUploads onBack={() => setView('camera')} />
+          <PastUploads onBack={() => setView("camera")} />
         )}
       </main>
 
