@@ -28,7 +28,6 @@ const Camera = () => {
   const chunksRef = useRef<Blob[]>([]);
 
   const [view, setView] = useState<"camera" | "uploads">("camera");
-  const [view, setView] = useState<"camera" | "uploads">("camera");
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
