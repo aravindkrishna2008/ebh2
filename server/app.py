@@ -66,7 +66,7 @@ def get_processing_params(music_type, voice_level, beats_level, noise_level):
             'enthusiasm_intensity': 0.4,
             'clarity_intensity': 0.7
         },
-        'rap': {  # Alias for trap
+        'rap': {  
             'autotune_strength': 0.7,
             'scale': 'minor',
             'low_gain': 4,
@@ -99,7 +99,7 @@ def get_processing_params(music_type, voice_level, beats_level, noise_level):
             'enthusiasm_intensity': 0.15,
             'clarity_intensity': 0.5
         },
-        'chill': {  # Alias for lofi
+        'chill': {
             'autotune_strength': 0.25,
             'scale': 'chromatic',
             'low_gain': 2,
@@ -125,7 +125,6 @@ def get_processing_params(music_type, voice_level, beats_level, noise_level):
     noise_reduction = (6 - noise_level) / 5.0
     params['noise_reduction'] = 0.3 + (noise_reduction * 0.4)
     
-    # Ensure beats_level is int
     params['beats_level'] = beats_level
     
     return params
@@ -258,13 +257,7 @@ def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_
     corrected_pitches = np.array([d[0] for d in corrected_data])
     correction_amounts = np.array([d[1] for d in corrected_data])
     
-    # --- Analysis for Stats ---
-    # Calculate pitch deviation in cents
-    # formula: 1200 * log2(original / target)
-    # If original < target (flat), result is negative.
-    # If original > target (sharp), result is positive.
-    # Wait: log2(A/B) = log2(A) - log2(B)
-    # If A < B, log2(A) < log2(B) -> negative.
+    # Analysis for Stats
     pitch_ratios_raw = valid_smoothed / corrected_pitches
     deviations_cents = 1200 * np.log2(pitch_ratios_raw)
     
@@ -272,7 +265,6 @@ def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_
     abs_deviation = np.mean(np.abs(deviations_cents))
     
     # Analyze tendency
-    # Thresholds: < 1 cent = In Tune, 1-3.5 = Slightly Off, > 3.5 = Out of Tune
     if avg_deviation > 3.5:
         tendency = "Sharp (Out of Tune)"
     elif avg_deviation > 1.0:
@@ -289,7 +281,6 @@ def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_
         'abs_error_cents': round(float(abs_deviation), 1),
         'tendency': tendency
     }
-    # --------------------------
     
     pitch_ratios = corrected_pitches / valid_smoothed
     adaptive_strength = strength * correction_amounts
@@ -360,7 +351,6 @@ def detect_key(y, sr):
         chroma_vals = np.mean(chroma, axis=1)
         
         # Simple template matching
-        # Major profile (C Major starting at index 0)
         major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
         minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
         
@@ -407,13 +397,10 @@ def analyze_tempo_stability(y, sr):
         ibis = np.diff(beat_times)
         
         # Calculate slope of IBIs
-        # If IBIs increasing -> Tempo decreasing (Slowing down)
-        # If IBIs decreasing -> Tempo increasing (Speeding up)
         x = np.arange(len(ibis))
         if len(x) > 1:
             slope, _ = np.polyfit(x, ibis, 1)
             
-            # Thresholds (arbitrary, tuned for reasonable sensitivity)
             if slope < -0.0005:
                 stability = "Rushing (Speeding up)"
             elif slope > 0.0005:
@@ -451,7 +438,7 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         
         update_job_status(job_id, 2, 15, "Audio loaded into memory")
         
-        # --- Analysis Pre-Processing ---
+        # Analysis Pre-Processing
         update_job_status(job_id, 2, 16, "Analyzing performance...")
         detected_key = detect_key(y, sr)
         detected_tempo, tempo_stability = analyze_tempo_stability(y, sr)
@@ -460,36 +447,32 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         if detected_tempo == 0:
             print(f"[{job_id}] Initial tempo detection failed (0 BPM). Retrying...")
             try:
-                # Try with a prior logic (uniform probability)
                 onset_env = librosa.onset.onset_strength(y=y, sr=sr)
                 tempo = librosa.beat.tempo(onset_envelope=onset_env, sr=sr, start_bpm=120)[0]
                 detected_tempo = int(round(float(tempo)))
                 print(f"[{job_id}] Retried tempo (method 2): {detected_tempo}")
             except Exception as e:
                 print(f"[{job_id}] Tempo retry failed: {e}")
-                detected_tempo = 120 # Fallback
+                detected_tempo = 120 
         
-        if detected_tempo <= 0: # Final safety check
+        if detected_tempo <= 0: 
              detected_tempo = 120
              
-        detected_tempo = int(detected_tempo) # Ensure standard python int
+        detected_tempo = int(detected_tempo) 
         print(f"[{job_id}] Final detected tempo: {detected_tempo} BPM")
                 
         # Calculate pitch stats BEFORE processing (on original audio)
-        # We need to run a pass of pitch detection without modification to get user stats
         pitch_stats = {}
         try:
-            # Run analysis-only pass
             if params.get('autotune_strength', 0) > 0:
                 _, pitch_stats = fast_autotune(
                     y, sr,
-                    strength=params['autotune_strength'], # Use strength to calculate deviation from target
+                    strength=params['autotune_strength'], 
                     scale=params.get('scale', 'chromatic'),
                     root_note=440
                 )
         except Exception as e:
             print(f"Pitch stats analysis failed: {e}")
-        # -------------------------------
         
         noise_intensity = params.get('noise_reduction', 0.5)
         if noise_intensity > 0:
@@ -598,7 +581,7 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         seconds = int(duration % 60)
         duration_str = f"{minutes}:{seconds:02d}"
         
-        # --- Stats Assembly ---
+        # Stats Assembly
         analysis_stats = {
             'key': detected_key,
             'tempo': detected_tempo,
@@ -606,8 +589,7 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
             'pitch_tendency': pitch_stats.get('tendency', 'Unknown'),
             'pitch_offset': pitch_stats.get('avg_deviation_cents', 0)
         }
-        # ----------------------
-
+        
         metadata = load_metadata()
         timestamp = datetime.now()
         new_record = {

@@ -20,7 +20,6 @@ class BeatGenerator:
             y, sr = librosa.load(self.vocal_path, sr=44100)
             self.duration = librosa.get_duration(y=y, sr=sr)
             
-            # Detect global tempo first for baseline
             try:
                 global_tempo_raw = librosa.beat.beat_track(y=y, sr=sr)[0]
                 global_tempo = float(global_tempo_raw)
@@ -30,19 +29,17 @@ class BeatGenerator:
             if global_tempo <= 0: global_tempo = 120.0
             print(f"Global tempo: {global_tempo:.1f} BPM")
             
-            # Windowed analysis
             num_windows = 8
             window_size = self.duration / num_windows
             
-            # Adaptive window check: if song is short, allow smaller windows
-            min_window_samples = sr * 0.5 # 0.5s minimum
+            min_window_samples = sr * 0.5 
             
             times = []
             tempos = []
             
             for i in range(num_windows):
                 start_time = i * window_size
-                end_time = min((i + 2) * window_size, self.duration) # Overlap
+                end_time = min((i + 2) * window_size, self.duration) 
                 
                 start_sample = int(start_time * sr)
                 end_sample = int(end_time * sr)
@@ -51,7 +48,6 @@ class BeatGenerator:
                 
                 y_slice = y[start_sample:end_sample]
                 try:
-                    # Ensure y_slice is not empty
                     if len(y_slice) == 0: continue
                     
                     local_tempo_raw = librosa.beat.beat_track(y=y_slice, sr=sr)[0]
@@ -59,7 +55,6 @@ class BeatGenerator:
                     
                     if local_tempo <= 0: continue
                     
-                    # Correction heuristics (octave errors)
                     if local_tempo < global_tempo * 0.6: local_tempo *= 2
                     elif local_tempo > global_tempo * 1.8: local_tempo /= 2
                     
@@ -72,10 +67,9 @@ class BeatGenerator:
                     
             if not times or len(times) < 2:
                 print("Dynamic analysis failed or insufficient data, falling back to global")
-                times = [0, max(self.duration, 0.1)] # Ensure non-zero duration
+                times = [0, max(self.duration, 0.1)] 
                 tempos = [global_tempo, global_tempo]
             else:
-                # Anchor start/end
                 if times[0] > 0:
                     times.insert(0, 0)
                     tempos.insert(0, tempos[0])
@@ -83,13 +77,11 @@ class BeatGenerator:
                     times.append(self.duration)
                     tempos.append(tempos[-1])
                     
-            # Create tempo interpolator
             tempo_func = interp1d(times, tempos, kind='linear', bounds_error=False, fill_value="extrapolate")
             
-            # Generate beat positions by integrating
             beat_times = [0.0]
             curr_time = 0.0
-            safety_limit = 10000 # Prevent infinite loop
+            safety_limit = 10000 
             count = 0
             
             while curr_time < self.duration and count < safety_limit:
@@ -98,25 +90,23 @@ class BeatGenerator:
                 except:
                     local_bpm = global_tempo
                     
-                step = 60.0 / max(local_bpm, 30) # Min 30 BPM safety
+                step = 60.0 / max(local_bpm, 30) 
                 curr_time += step
                 if curr_time < self.duration:
                     beat_times.append(curr_time)
                 count += 1
                     
             self.beat_times = beat_times
-            self.tempo = global_tempo # Keep for reference
+            self.tempo = global_tempo 
             print(f"Generated {len(beat_times)} beats with variable tempo")
             
         except Exception as e:
             print(f"CRITICAL: generate_beat_map failed: {e}")
-            # Ultimate fallback to prevent silence
             self.duration = self.duration if self.duration else 10.0
-            self.beat_times = [0.0, 0.5, 1.0, 1.5] # Dummy beats
+            self.beat_times = [0.0, 0.5, 1.0, 1.5] 
             self.tempo = 120.0
 
     def detect_tempo(self):
-        # Legacy support just in case, but prefers generate_beat_map
         return self.generate_beat_map()
     
     def generate_kick(self, sr=44100):
@@ -178,43 +168,35 @@ class BeatGenerator:
             beat_in_bar = i % 4
             
             if style_mode == 'rap':
-                # Kick on 0 and 2
                 if beat_in_bar in [0, 2]:
                     end_pos = min(beat_pos + len(kick), total_samples)
                     drums[beat_pos:end_pos] += kick[:end_pos - beat_pos]
                 
-                # Snare on 1 and 3
                 if beat_in_bar in [1, 3]:
                     end_pos = min(beat_pos + len(snare), total_samples)
                     drums[beat_pos:end_pos] += snare[:end_pos - beat_pos]
                 
-                # Hi-hats: 8th notes (interpolate)
                 next_t = self.beat_times[i+1] if i + 1 < len(self.beat_times) else t + (t - self.beat_times[i-1])
                 half_t = (t + next_t) / 2
                 half_pos = int(half_t * sr)
                 
                 if half_pos < total_samples:
-                    # On beat hihat
                     end_pos = min(beat_pos + len(hihat_closed), total_samples)
                     drums[beat_pos:end_pos] += hihat_closed[:end_pos - beat_pos]
                     
-                    # Off beat hihat (open on 2nd and 4th beats maybe?)
                     hihat = hihat_open if (beat_in_bar % 2 == 1) else hihat_closed
                     end_pos = min(half_pos + len(hihat), total_samples)
                     drums[half_pos:end_pos] += hihat[:end_pos - half_pos]
             
-            else: # Chill
-                # Kick on 0 and 2
+            else: 
                 if beat_in_bar in [0, 2]:
                     end_pos = min(beat_pos + len(kick), total_samples)
                     drums[beat_pos:end_pos] += (kick * 0.6).astype(np.int16)[:end_pos - beat_pos]
                 
-                # Snare on 1 and 3
                 if beat_in_bar in [1, 3]:
                     end_pos = min(beat_pos + len(snare), total_samples)
                     drums[beat_pos:end_pos] += (snare * 0.5).astype(np.int16)[:end_pos - beat_pos]
                 
-                # Simple hihats
                 end_pos = min(beat_pos + len(hihat_closed), total_samples)
                 drums[beat_pos:end_pos] += (hihat_closed * 0.4).astype(np.int16)[:end_pos - beat_pos]
         
@@ -232,20 +214,16 @@ class BeatGenerator:
             note_freq_multiplier = 1
         else:
             notes = [55, 49, 44, 49]
-            note_freq_multiplier = 2 # Slower bass for chill
+            note_freq_multiplier = 2 
         
         note_idx = 0
         
         for i, t in enumerate(self.beat_times):
-            # Only play bass on every beat (rap) or every other beat (chill)?
-            # Original logic: Note duration = beat duration (rap) or 2 beats (chill)
-            
             if style_mode == 'chill' and i % 2 != 0: continue
             
             start_pos = int(t * sr)
             if start_pos >= total_samples: break
             
-            # Determine duration based on next beat(s)
             steps = 1 if style_mode == 'rap' else 2
             target_idx = min(i + steps, len(self.beat_times) - 1)
             
@@ -253,7 +231,7 @@ class BeatGenerator:
                 end_t = self.beat_times[target_idx]
                 note_dur = end_t - t
             else:
-                note_dur = 0.5 # Fallback
+                note_dur = 0.5 
             
             frequency = notes[note_idx % len(notes)]
             bass_note = self.generate_bass(sr, note_dur, frequency)
@@ -269,10 +247,8 @@ class BeatGenerator:
     def calculate_optimal_beat_volume(self, vocal):
         print(f"Vocal loudness: {vocal.dBFS:.1f} dBFS")
         
-        # Base adjustment restored to -12dB (audible but balanced)
         base_adjustment = -12
         
-        # Adjust based on intensity (1-5, default 3)
         intensity_adjustment = (self.intensity - 3) * 3
         final_adjustment = base_adjustment + intensity_adjustment
         
