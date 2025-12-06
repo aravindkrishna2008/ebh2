@@ -1,0 +1,121 @@
+[
+  {
+    "id": "a6ba3c51",
+    "date": "2025-12-06",
+    "time": "13:31",
+    "type": "LOFI",
+    "duration": "0:01",
+    "original_file": "a6ba3c51_original_recording.webm",
+    "processed_file": "a6ba3c51_processed.wav",
+    "settings": {
+      "autotune_strength": 0.25,
+      "scale": "chromatic",
+      "low_gain": 2,
+      "mid_gain": 0,
+      "high_gain": -2,
+      "compression_threshold": 0.75,
+      "compression_ratio": 2.5,
+      "enthusiasm_intensity": 0.15,
+      "clarity_intensity": 0.5,
+      "noise_reduction": 0.54
+    }
+  },
+  {
+    "id": "a4d883d1",
+    "date": "2025-12-06",
+    "time": "13:28",
+    "type": "LOFI",
+    "duration": "0:01",
+    "original_file": "a4d883d1_original_recording.webm",
+    "processed_file": "a4d883d1_processed.wav",
+    "settings": {
+      "autotune_strength": 0.25,
+      "scale": "chromatic",
+      "low_gain": 2,
+      "mid_gain": 0,
+      "high_gain": -2,
+      "compression_threshold": 0.75,
+      "compression_ratio": 2.5,
+      "enthusiasm_intensity": 0.15,
+      "clarity_intensity": 0.5,
+      "noise_reduction": 0.54
+    }
+  },
+  {
+    "id": "b1416def",
+    "date": "2025-12-06",
+    "time": "13:26",
+    "type": "LOFI",
+    "duration": "0:03",
+    "original_file": "b1416def_original_recording.webm",
+    "processed_file": "b1416def_processed.wav",
+    "settings": {
+      "autotune_strength": 0.25,
+      "scale": "chromatic",
+      "low_gain": 2,
+      "mid_gain": 0,
+      "high_gain": -2,
+      "compression_threshold": 0.75,
+      "compression_ratio": 2.5,
+      "enthusiasm_intensity": 0.15,
+      "clarity_intensity": 0.5,
+      "noise_reduction": 0.54
+    }
+  },
+  {
+    "id": "6ffb58c1",
+    "date": "2025-12-06",
+    "time": "13:23",
+    "type": "LOFI",
+    "duration": "0:02",
+    "original_file": "6ffb58c1_original_recording.webm",
+    "processed_file": "6ffb58c1_processed.wav",
+    "settings": {
+      "autotune_strength": 0.25,
+      "scale": "chromatic",
+      "low_gain": 2,
+      "mid_gain": 0,
+      "high_gain": -2,
+      "compression_threshold": 0.75,
+      "compression_ratio": 2.5,
+      "enthusiasm_intensity": 0.15,
+      "clarity_intensity": 0.5,
+      "polish_intensity": 0.6
+    }
+  },
+  {
+    "id": "3a43cb38",
+    "date": "2025-12-06",
+    "time": "13:19",
+    "type": "LOFI",
+    "duration": "0:10",
+    "original_file": "3a43cb38_original_recording.webm",
+    "processed_file": "3a43cb38_processed.wav",
+    "settings": {
+      "autotune_strength": 0.25,
+      "scale": "chromatic",
+      "low_gain": 2,
+      "mid_gain": 0,
+      "high_gain": -2,
+      "compression_threshold": 0.75,
+      "compression_ratio": 2.5,
+      "enthusiasm_intensity": 0.15,
+      "clarity_intensity": 0.5,
+      "polish_intensity": 0.6
+    }
+  },
+  {
+    "id": "aa6ca3ae",
+    "date": "2025-12-06",
+    "time": "13:15",
+    "type": "LOFI",
+    "duration": "0:01",
+    "original_file": "aa6ca3ae_original_recording.webm",
+    "processed_file": "aa6ca3ae_processed.wav",
+    "settings": {
+      "voiceLevel": 3,
+      "beatsLevel": 3,
+      "noiseLevel": 3
+    }
+  }
+]
