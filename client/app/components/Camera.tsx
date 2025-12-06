@@ -10,6 +10,15 @@ interface ProgressData {
   message: string;
   duration?: string;
   error?: string;
+  stats?: AudioStats;
+}
+
+interface AudioStats {
+  key: string;
+  tempo: number;
+  tempo_stability: string;
+  pitch_tendency: string;
+  pitch_offset: number;
 }
 
 const Camera = () => {
@@ -29,6 +38,7 @@ const Camera = () => {
   const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(
     null
   );
+  const [audioStats, setAudioStats] = useState<AudioStats | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [processingMessage, setProcessingMessage] = useState("");
@@ -102,6 +112,7 @@ const Camera = () => {
 
         setIsProcessing(true);
         setProgress(0);
+        setAudioStats(null);
         setProcessingMessage("Uploading audio...");
 
         try {
@@ -129,6 +140,10 @@ const Camera = () => {
                 if (progressData.status === "complete") {
                   eventSource.close();
                   console.log("Processing complete, downloading audio...");
+
+                  if (progressData.stats) {
+                    setAudioStats(progressData.stats);
+                  }
 
                   try {
                     const audioResponse = await fetch(
@@ -167,6 +182,7 @@ const Camera = () => {
                   setIsProcessing(false);
                   setProgress(0);
                   setProcessingMessage("");
+                  setAudioStats(null);
                 }
               } catch (parseError) {
                 console.error(
@@ -183,16 +199,19 @@ const Camera = () => {
               setIsProcessing(false);
               setProgress(0);
               setProcessingMessage("");
+              setAudioStats(null);
             };
           } else {
             console.error("Server error:", response.statusText);
             setIsProcessing(false);
+            setAudioStats(null);
           }
         } catch (error) {
           console.error("Error sending data:", error);
           setIsProcessing(false);
           setProgress(0);
           setProcessingMessage("");
+          setAudioStats(null);
         }
       };
 
@@ -532,6 +551,43 @@ const Camera = () => {
                   />
                 </div>
               )}
+
+              {audioStats && !isProcessing && (
+                <div className="mt-8 w-full max-w-md animate-in fade-in slide-in-from-bottom-6 duration-700 delay-100 pb-12">
+                  <div className="flex justify-between items-center mb-4">
+                    <label className="text-xs font-bold uppercase tracking-widest text-[#111]/40">
+                      Performance Analysis
+                    </label>
+                    <div className="h-px flex-1 bg-[#111]/10 ml-4"></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <StatCard label="Estimated Key" value={audioStats.key} />
+                    <StatCard
+                      label="Tempo"
+                      value={`${Math.round(audioStats.tempo)} BPM`}
+                      sub={audioStats.tempo_stability}
+                      highlight={audioStats.tempo_stability !== "Steady"}
+                    />
+                    <StatCard
+                      label="Pitch Tendency"
+                      value={audioStats.pitch_tendency}
+                      sub={
+                        audioStats.pitch_offset !== 0
+                          ? `${audioStats.pitch_offset > 0 ? "+" : ""}${
+                              audioStats.pitch_offset
+                            } cents`
+                          : "Perfect"
+                      }
+                      highlight={audioStats.pitch_tendency !== "In Tune"}
+                    />
+                    <StatCard
+                      label="Style"
+                      value={musicType.toUpperCase()}
+                      sub="Auto-detected"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -597,5 +653,39 @@ const MinimalSlider = ({
     </div>
   );
 };
+
+const StatCard = ({
+  label,
+  value,
+  sub,
+  highlight = false,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  highlight?: boolean;
+}) => (
+  <div
+    className={`p-4 rounded-xl border transition-all duration-300 ${
+      highlight
+        ? "bg-white border-[#F45B69]/20 shadow-sm"
+        : "bg-[#EAE8E0] border-transparent"
+    }`}
+  >
+    <p className="text-[10px] uppercase tracking-widest text-[#111]/40 font-bold mb-1">
+      {label}
+    </p>
+    <p
+      className={`text-lg font-bold leading-tight ${
+        highlight ? "text-[#F45B69]" : "text-[#111]/80"
+      }`}
+    >
+      {value}
+    </p>
+    {sub && (
+      <p className="text-[10px] font-medium text-[#111]/40 mt-1">{sub}</p>
+    )}
+  </div>
+);
 
 export default Camera;

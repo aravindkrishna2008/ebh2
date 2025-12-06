@@ -3,6 +3,7 @@ import numpy as np
 import soundfile as sf
 import librosa
 from pydub import AudioSegment
+from scipy.interpolate import interp1d
 
 class BeatGenerator:
     def __init__(self, vocal_path, style='rap', intensity=3):
@@ -14,74 +15,105 @@ class BeatGenerator:
         self.beat_times = []
         
     def generate_beat_map(self):
-        print("Analyzing dynamic tempo...")
-        y, sr = librosa.load(self.vocal_path, sr=44100)
-        self.duration = librosa.get_duration(y=y, sr=sr)
-        
-        # Detect global tempo first for baseline
-        global_tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        print(f"Global tempo: {global_tempo:.1f} BPM")
-        
-        # Windowed analysis
-        num_windows = 8
-        window_size = self.duration / num_windows
-        
-        times = []
-        tempos = []
-        
-        for i in range(num_windows):
-            start_time = i * window_size
-            end_time = min((i + 2) * window_size, self.duration) # Overlap
+        try:
+            print("Analyzing dynamic tempo...")
+            y, sr = librosa.load(self.vocal_path, sr=44100)
+            self.duration = librosa.get_duration(y=y, sr=sr)
             
-            start_sample = int(start_time * sr)
-            end_sample = int(end_time * sr)
-            
-            if end_sample - start_sample < sr * 2: continue # Skip short segments
-            
-            y_slice = y[start_sample:end_sample]
+            # Detect global tempo first for baseline
             try:
-                local_tempo, _ = librosa.beat.beat_track(y=y_slice, sr=sr)
-                
-                # Correction heuristics (octave errors)
-                if local_tempo < global_tempo * 0.6: local_tempo *= 2
-                elif local_tempo > global_tempo * 1.8: local_tempo /= 2
-                
-                mid_time = (start_time + end_time) / 2
-                times.append(mid_time)
-                tempos.append(local_tempo)
+                global_tempo_raw = librosa.beat.beat_track(y=y, sr=sr)[0]
+                global_tempo = float(global_tempo_raw)
             except:
-                pass
+                global_tempo = 120.0
                 
-        if not times:
-            print("Dynamic analysis failed, falling back to global")
-            times = [0, self.duration]
-            tempos = [global_tempo, global_tempo]
-        else:
-            # Anchor start/end
-            if times[0] > 0:
-                times.insert(0, 0)
-                tempos.insert(0, tempos[0])
-            if times[-1] < self.duration:
-                times.append(self.duration)
-                tempos.append(tempos[-1])
+            if global_tempo <= 0: global_tempo = 120.0
+            print(f"Global tempo: {global_tempo:.1f} BPM")
+            
+            # Windowed analysis
+            num_windows = 8
+            window_size = self.duration / num_windows
+            
+            # Adaptive window check: if song is short, allow smaller windows
+            min_window_samples = sr * 0.5 # 0.5s minimum
+            
+            times = []
+            tempos = []
+            
+            for i in range(num_windows):
+                start_time = i * window_size
+                end_time = min((i + 2) * window_size, self.duration) # Overlap
                 
-        # Create tempo interpolator
-        from scipy.interpolate import interp1d
-        tempo_func = interp1d(times, tempos, kind='linear', bounds_error=False, fill_value="extrapolate")
-        
-        # Generate beat positions by integrating
-        beat_times = [0.0]
-        curr_time = 0.0
-        while curr_time < self.duration:
-            local_bpm = float(tempo_func(curr_time))
-            step = 60.0 / max(local_bpm, 30) # Min 30 BPM safety
-            curr_time += step
-            if curr_time < self.duration:
-                beat_times.append(curr_time)
+                start_sample = int(start_time * sr)
+                end_sample = int(end_time * sr)
                 
-        self.beat_times = beat_times
-        self.tempo = global_tempo # Keep for reference
-        print(f"Generated {len(beat_times)} beats with variable tempo")
+                if end_sample - start_sample < min_window_samples: continue 
+                
+                y_slice = y[start_sample:end_sample]
+                try:
+                    # Ensure y_slice is not empty
+                    if len(y_slice) == 0: continue
+                    
+                    local_tempo_raw = librosa.beat.beat_track(y=y_slice, sr=sr)[0]
+                    local_tempo = float(local_tempo_raw)
+                    
+                    if local_tempo <= 0: continue
+                    
+                    # Correction heuristics (octave errors)
+                    if local_tempo < global_tempo * 0.6: local_tempo *= 2
+                    elif local_tempo > global_tempo * 1.8: local_tempo /= 2
+                    
+                    mid_time = (start_time + end_time) / 2
+                    times.append(mid_time)
+                    tempos.append(local_tempo)
+                except Exception as e:
+                    print(f"Window {i} analysis failed: {e}")
+                    pass
+                    
+            if not times or len(times) < 2:
+                print("Dynamic analysis failed or insufficient data, falling back to global")
+                times = [0, max(self.duration, 0.1)] # Ensure non-zero duration
+                tempos = [global_tempo, global_tempo]
+            else:
+                # Anchor start/end
+                if times[0] > 0:
+                    times.insert(0, 0)
+                    tempos.insert(0, tempos[0])
+                if times[-1] < self.duration:
+                    times.append(self.duration)
+                    tempos.append(tempos[-1])
+                    
+            # Create tempo interpolator
+            tempo_func = interp1d(times, tempos, kind='linear', bounds_error=False, fill_value="extrapolate")
+            
+            # Generate beat positions by integrating
+            beat_times = [0.0]
+            curr_time = 0.0
+            safety_limit = 10000 # Prevent infinite loop
+            count = 0
+            
+            while curr_time < self.duration and count < safety_limit:
+                try:
+                    local_bpm = float(tempo_func(curr_time))
+                except:
+                    local_bpm = global_tempo
+                    
+                step = 60.0 / max(local_bpm, 30) # Min 30 BPM safety
+                curr_time += step
+                if curr_time < self.duration:
+                    beat_times.append(curr_time)
+                count += 1
+                    
+            self.beat_times = beat_times
+            self.tempo = global_tempo # Keep for reference
+            print(f"Generated {len(beat_times)} beats with variable tempo")
+            
+        except Exception as e:
+            print(f"CRITICAL: generate_beat_map failed: {e}")
+            # Ultimate fallback to prevent silence
+            self.duration = self.duration if self.duration else 10.0
+            self.beat_times = [0.0, 0.5, 1.0, 1.5] # Dummy beats
+            self.tempo = 120.0
 
     def detect_tempo(self):
         # Legacy support just in case, but prefers generate_beat_map
@@ -237,8 +269,8 @@ class BeatGenerator:
     def calculate_optimal_beat_volume(self, vocal):
         print(f"Vocal loudness: {vocal.dBFS:.1f} dBFS")
         
-        # Base adjustment set to -12dB as requested by user
-        base_adjustment = -16
+        # Base adjustment restored to -12dB (audible but balanced)
+        base_adjustment = -12
         
         # Adjust based on intensity (1-5, default 3)
         intensity_adjustment = (self.intensity - 3) * 3

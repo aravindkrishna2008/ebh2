@@ -235,7 +235,7 @@ def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_
     
     valid_mask = pitches > 0
     if not np.any(valid_mask):
-        return y
+        return y, {}
     
     if update_fn:
         update_fn("Smoothing pitch curve...")
@@ -243,7 +243,7 @@ def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_
     smoothed_pitches = smooth_pitch_curve(pitches, alpha=0.6, preserve_variation=True)
     valid_mask_smooth = smoothed_pitches > 0
     if not np.any(valid_mask_smooth):
-        return y
+        return y, {}
     
     if update_fn:
         update_fn("Calculating corrections...")
@@ -253,10 +253,43 @@ def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_
     
     corrected_data = [snap_to_scale(p, scale, root_note, 0.2) for p in valid_smoothed]
     if len(corrected_data) == 0:
-        return y
+        return y, {}
     
     corrected_pitches = np.array([d[0] for d in corrected_data])
     correction_amounts = np.array([d[1] for d in corrected_data])
+    
+    # --- Analysis for Stats ---
+    # Calculate pitch deviation in cents
+    # formula: 1200 * log2(original / target)
+    # If original < target (flat), result is negative.
+    # If original > target (sharp), result is positive.
+    # Wait: log2(A/B) = log2(A) - log2(B)
+    # If A < B, log2(A) < log2(B) -> negative.
+    pitch_ratios_raw = valid_smoothed / corrected_pitches
+    deviations_cents = 1200 * np.log2(pitch_ratios_raw)
+    
+    avg_deviation = np.mean(deviations_cents)
+    abs_deviation = np.mean(np.abs(deviations_cents))
+    
+    # Analyze tendency
+    # Thresholds: < 1 cent = In Tune, 1-3.5 = Slightly Off, > 3.5 = Out of Tune
+    if avg_deviation > 3.5:
+        tendency = "Sharp (Out of Tune)"
+    elif avg_deviation > 1.0:
+        tendency = "Slightly Sharp"
+    elif avg_deviation < -3.5:
+        tendency = "Flat (Out of Tune)"
+    elif avg_deviation < -1.0:
+        tendency = "Slightly Flat"
+    else:
+        tendency = "In Tune"
+        
+    stats = {
+        'avg_deviation_cents': round(float(avg_deviation), 1),
+        'abs_error_cents': round(float(abs_deviation), 1),
+        'tendency': tendency
+    }
+    # --------------------------
     
     pitch_ratios = corrected_pitches / valid_smoothed
     adaptive_strength = strength * correction_amounts
@@ -319,7 +352,81 @@ def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_
     if np.max(np.abs(output)) > 0:
         output = output / np.max(np.abs(output)) * 0.95
     
-    return output
+    return output, stats
+
+def detect_key(y, sr):
+    try:
+        chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+        chroma_vals = np.mean(chroma, axis=1)
+        
+        # Simple template matching
+        # Major profile (C Major starting at index 0)
+        major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+        minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+        
+        # Normalize
+        major_profile /= np.max(major_profile)
+        minor_profile /= np.max(minor_profile)
+        chroma_vals /= np.max(chroma_vals)
+        
+        key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        best_score = -1
+        best_key = "Unknown"
+        
+        for i in range(12):
+            # Roll profiles to check each key
+            score_major = np.corrcoef(chroma_vals, np.roll(major_profile, i))[0, 1]
+            score_minor = np.corrcoef(chroma_vals, np.roll(minor_profile, i))[0, 1]
+            
+            if score_major > best_score:
+                best_score = score_major
+                best_key = f"{key_names[i]} Major"
+            
+            if score_minor > best_score:
+                best_score = score_minor
+                best_key = f"{key_names[i]} Minor"
+                
+        return best_key
+    except Exception as e:
+        print(f"Key detection error: {e}")
+        return "Unknown"
+
+def analyze_tempo_stability(y, sr):
+    try:
+        # Use simple beat tracking to find tempo drift
+        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+        
+        # Ensure tempo is a float
+        if isinstance(tempo, np.ndarray):
+            tempo = float(tempo)
+            
+        if len(beat_frames) < 4:
+            return round(tempo), "Unknown"
+            
+        beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+        ibis = np.diff(beat_times)
+        
+        # Calculate slope of IBIs
+        # If IBIs increasing -> Tempo decreasing (Slowing down)
+        # If IBIs decreasing -> Tempo increasing (Speeding up)
+        x = np.arange(len(ibis))
+        if len(x) > 1:
+            slope, _ = np.polyfit(x, ibis, 1)
+            
+            # Thresholds (arbitrary, tuned for reasonable sensitivity)
+            if slope < -0.0005:
+                stability = "Rushing (Speeding up)"
+            elif slope > 0.0005:
+                stability = "Dragging (Slowing down)"
+            else:
+                stability = "Steady"
+        else:
+            stability = "Unknown"
+            
+        return round(tempo), stability
+    except Exception as e:
+        print(f"Tempo analysis error: {e}")
+        return 0, "Unknown"
 
 def process_recording_with_progress(job_id, input_path, output_path, params, music_type, input_filename, output_filename):
     try:
@@ -344,6 +451,46 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         
         update_job_status(job_id, 2, 15, "Audio loaded into memory")
         
+        # --- Analysis Pre-Processing ---
+        update_job_status(job_id, 2, 16, "Analyzing performance...")
+        detected_key = detect_key(y, sr)
+        detected_tempo, tempo_stability = analyze_tempo_stability(y, sr)
+        
+        # If tempo detected is 0, try beat_track again with looser parameters or default to 120
+        if detected_tempo == 0:
+            print(f"[{job_id}] Initial tempo detection failed (0 BPM). Retrying...")
+            try:
+                # Try with a prior logic (uniform probability)
+                onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+                tempo = librosa.beat.tempo(onset_envelope=onset_env, sr=sr, start_bpm=120)[0]
+                detected_tempo = int(round(float(tempo)))
+                print(f"[{job_id}] Retried tempo (method 2): {detected_tempo}")
+            except Exception as e:
+                print(f"[{job_id}] Tempo retry failed: {e}")
+                detected_tempo = 120 # Fallback
+        
+        if detected_tempo <= 0: # Final safety check
+             detected_tempo = 120
+             
+        detected_tempo = int(detected_tempo) # Ensure standard python int
+        print(f"[{job_id}] Final detected tempo: {detected_tempo} BPM")
+                
+        # Calculate pitch stats BEFORE processing (on original audio)
+        # We need to run a pass of pitch detection without modification to get user stats
+        pitch_stats = {}
+        try:
+            # Run analysis-only pass
+            if params.get('autotune_strength', 0) > 0:
+                _, pitch_stats = fast_autotune(
+                    y, sr,
+                    strength=params['autotune_strength'], # Use strength to calculate deviation from target
+                    scale=params.get('scale', 'chromatic'),
+                    root_note=440
+                )
+        except Exception as e:
+            print(f"Pitch stats analysis failed: {e}")
+        # -------------------------------
+        
         noise_intensity = params.get('noise_reduction', 0.5)
         if noise_intensity > 0:
             update_job_status(job_id, 3, 18, "Analyzing background noise...")
@@ -354,6 +501,7 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         y = enhance_clarity(y, sr, preserve_details=True, intensity=params.get('clarity_intensity', 0.8))
         update_job_status(job_id, 4, 35, "Vocal clarity enhanced")
         
+        pitch_stats_processed = {}
         if params.get('autotune_strength', 0) > 0:
             def autotune_progress(msg):
                 progress_map = {
@@ -366,7 +514,7 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
                 update_job_status(job_id, step, pct, msg)
             
             update_job_status(job_id, 5, 38, "Starting pitch analysis...")
-            y = fast_autotune(
+            y, pitch_stats_processed = fast_autotune(
                 y, sr,
                 strength=params['autotune_strength'],
                 scale=params.get('scale', 'chromatic'),
@@ -450,6 +598,16 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         seconds = int(duration % 60)
         duration_str = f"{minutes}:{seconds:02d}"
         
+        # --- Stats Assembly ---
+        analysis_stats = {
+            'key': detected_key,
+            'tempo': detected_tempo,
+            'tempo_stability': tempo_stability,
+            'pitch_tendency': pitch_stats.get('tendency', 'Unknown'),
+            'pitch_offset': pitch_stats.get('avg_deviation_cents', 0)
+        }
+        # ----------------------
+
         metadata = load_metadata()
         timestamp = datetime.now()
         new_record = {
@@ -460,7 +618,8 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
             'duration': duration_str,
             'original_file': input_filename,
             'processed_file': output_filename,
-            'settings': params
+            'settings': params,
+            'stats': analysis_stats # Save stats
         }
         metadata.insert(0, new_record)
         save_metadata(metadata)
@@ -468,6 +627,7 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         update_job_status(job_id, 15, 100, "Ready to play!")
         processing_jobs[job_id]['status'] = 'complete'
         processing_jobs[job_id]['duration'] = duration_str
+        processing_jobs[job_id]['stats'] = analysis_stats # Send stats to client
         print(f"[{job_id}] Processing complete! Duration: {duration_str}")
         
     except Exception as e:
@@ -541,6 +701,7 @@ def get_progress(job_id):
             
             if job['status'] == 'complete':
                 data['duration'] = job.get('duration', '')
+                data['stats'] = job.get('stats', {}) # Send stats
                 print(f"[{job_id}] Sending complete status via SSE")
             elif job['status'] == 'error':
                 data['error'] = job.get('error', 'Unknown error')
