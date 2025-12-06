@@ -1,3 +1,3 @@
 /output/
 /voice_enhancer/env/
-voice_enhancer/.env
+*.env

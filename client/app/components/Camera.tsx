@@ -34,7 +34,9 @@ const Camera = () => {
   const [voiceLevel, setVoiceLevel] = useState(3);
   const [beatsLevel, setBeatsLevel] = useState(3);
   const [noiseLevel, setNoiseLevel] = useState(3);
-  const [musicType, setMusicType] = useState<"rap" | "chill">("chill");
+  const [musicType, setMusicType] = useState<"rap" | "chill" | "crazy">(
+    "chill"
+  );
   const [processedAudioUrl, setProcessedAudioUrl] = useState<string | null>(
     null
   );
@@ -391,10 +393,12 @@ const Camera = () => {
                   <div className="h-px flex-1 bg-[#111]/10 ml-4"></div>
                 </div>
                 <div className="flex gap-2 p-1 bg-[#EAE8E0] rounded-xl">
-                  {["rap", "chill"].map((type) => (
+                  {["rap", "chill", "crazy"].map((type) => (
                     <button
                       key={type}
-                      onClick={() => setMusicType(type as "rap" | "chill")}
+                      onClick={() =>
+                        setMusicType(type as "rap" | "chill" | "crazy")
+                      }
                       className={`flex-1 py-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
                         musicType === type
                           ? "bg-white text-[#111] shadow-sm scale-100"

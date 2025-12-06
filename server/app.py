@@ -33,6 +33,7 @@ except ImportError:
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import interp1d
 from beat_generator import BeatGenerator
+from voicemain import process_mp3
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -514,108 +515,126 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         except Exception as e:
             print(f"Pitch stats analysis failed: {e}")
         
-        noise_intensity = params.get('noise_reduction', 0.5)
-        if noise_intensity > 0:
-            update_job_status(job_id, 3, 18, "Analyzing background noise...")
-            y = fast_noise_reduce(y, sr, intensity=noise_intensity)
-            update_job_status(job_id, 3, 25, "Background noise reduced")
-        
-        update_job_status(job_id, 4, 28, "Analyzing vocal frequencies...")
+        # --- CRAZY MODE BRANCH ---
         if music_type == 'crazy':
-            update_job_status(job_id, 4, 30, "Applying crazy effects...")
-            y = apply_crazy_effects(y, sr)
+            update_job_status(job_id, 5, 40, "Running Crazy Mode generation...")
+            print(f"[{job_id}] Starting Crazy Mode (using voicemain.py)...")
+            
+            # process_mp3 handles its own pipeline.
+            process_mp3(input_path, output_path)
+            
+            update_job_status(job_id, 14, 98, "Crazy Mode generation complete")
+            
+            # Reload processed audio for duration and consistency
+            if os.path.exists(output_path):
+                y, sr = librosa.load(output_path, sr=None, mono=True)
+            else:
+                raise Exception("Crazy mode generation failed to produce output file.")
+                
         else:
+            # --- STANDARD MODE BRANCH ---
+            noise_intensity = params.get('noise_reduction', 0.5)
+            if noise_intensity > 0:
+                update_job_status(job_id, 3, 18, "Analyzing background noise...")
+                y = fast_noise_reduce(y, sr, intensity=noise_intensity)
+                update_job_status(job_id, 3, 25, "Background noise reduced")
+            
+            update_job_status(job_id, 4, 28, "Analyzing vocal frequencies...")
+            
+            # Crazy effects block inside standard pipeline is now redundant if music_type='crazy' is handled above
+            # But just in case someone passes 'crazy' without triggering the branch (unlikely with this logic)
+            # Actually, I removed 'crazy' logic from here since it's handled in the branch.
             y = enhance_clarity(y, sr, preserve_details=True, intensity=params.get('clarity_intensity', 0.8))
-        update_job_status(job_id, 4, 35, "Vocal clarity enhanced")
-        
-        pitch_stats_processed = {}
-        if params.get('autotune_strength', 0) > 0:
-            def autotune_progress(msg):
-                progress_map = {
-                    "Detecting pitch contours...": (5, 40),
-                    "Smoothing pitch curve...": (6, 50),
-                    "Calculating corrections...": (7, 55),
-                    "Applying pitch correction...": (7, 60),
-                }
-                step, pct = progress_map.get(msg, (7, 55))
-                update_job_status(job_id, step, pct, msg)
+            update_job_status(job_id, 4, 35, "Vocal clarity enhanced")
             
-            update_job_status(job_id, 5, 38, "Starting pitch analysis...")
-            y, pitch_stats_processed = fast_autotune(
-                y, sr,
-                strength=params['autotune_strength'],
-                scale=params.get('scale', 'chromatic'),
-                root_note=440,
-                update_fn=autotune_progress
-            )
-            update_job_status(job_id, 8, 70, "Pitch correction complete")
-        
-        if params.get('enthusiasm_intensity', 0) > 0:
-            update_job_status(job_id, 9, 72, "Boosting vocal presence...")
-            y = enhance_enthusiasm_fast(y, sr, intensity=params['enthusiasm_intensity'])
-            update_job_status(job_id, 9, 76, "Vocal energy enhanced")
-        
-        update_job_status(job_id, 10, 78, "Cleaning up audio glitches...")
-        y = remove_artifacts(y, sr)
-        update_job_status(job_id, 10, 82, "Audio artifacts removed")
-        
-        update_job_status(job_id, 11, 84, "Applying dynamic compression...")
-        y = apply_compression(
-            y,
-            threshold=params.get('compression_threshold', 0.7),
-            ratio=params.get('compression_ratio', 4.0),
-            sr=sr
-        )
-        update_job_status(job_id, 11, 88, "Dynamics balanced")
-        
-        if any([params.get('low_gain', 0), params.get('mid_gain', 0), params.get('high_gain', 0)]):
-            update_job_status(job_id, 12, 90, "Applying EQ adjustments...")
-            y = apply_eq(
-                y, sr,
-                low_gain=params.get('low_gain', 0),
-                mid_gain=params.get('mid_gain', 0),
-                high_gain=params.get('high_gain', 0)
-            )
-            update_job_status(job_id, 12, 93, "Frequency balance optimized")
-        
-        update_job_status(job_id, 13, 95, "Normalizing audio levels...")
-        y_max = np.max(np.abs(y))
-        if y_max > 0:
-            y = y * (0.95 / y_max)
-        
-        update_job_status(job_id, 14, 97, "Encoding final audio...")
-        
-        beats_level = int(params.get('beats_level', 0))
-        print(f"[{job_id}] Beats level: {beats_level}, Music type: {music_type}")
-        
-        if beats_level > 0:
-            update_job_status(job_id, 14, 98, "Generating beat...")
-            
-            # Save temp processed vocal for mixing
-            temp_vocal_path = output_path.rsplit('.', 1)[0] + '_temp_vocal.wav'
-            sf.write(temp_vocal_path, y, sr)
-            print(f"[{job_id}] Saved temp vocal to {temp_vocal_path}")
-            
-            try:
-                bg = BeatGenerator(
-                    vocal_path=temp_vocal_path,
-                    style=music_type,
-                    intensity=beats_level
+            pitch_stats_processed = {}
+            if params.get('autotune_strength', 0) > 0:
+                def autotune_progress(msg):
+                    progress_map = {
+                        "Detecting pitch contours...": (5, 40),
+                        "Smoothing pitch curve...": (6, 50),
+                        "Calculating corrections...": (7, 55),
+                        "Applying pitch correction...": (7, 60),
+                    }
+                    step, pct = progress_map.get(msg, (7, 55))
+                    update_job_status(job_id, step, pct, msg)
+                
+                update_job_status(job_id, 5, 38, "Starting pitch analysis...")
+                y, pitch_stats_processed = fast_autotune(
+                    y, sr,
+                    strength=params['autotune_strength'],
+                    scale=params.get('scale', 'chromatic'),
+                    root_note=440,
+                    update_fn=autotune_progress
                 )
-                print(f"[{job_id}] Initialized BeatGenerator with style={music_type}")
-                bg.mix_tracks(output_path)
-                print(f"[{job_id}] Beat generation and mixing successful")
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                print(f"Beat generation failed: {e}")
-                # Fallback to just saving vocals
+                update_job_status(job_id, 8, 70, "Pitch correction complete")
+            
+            if params.get('enthusiasm_intensity', 0) > 0:
+                update_job_status(job_id, 9, 72, "Boosting vocal presence...")
+                y = enhance_enthusiasm_fast(y, sr, intensity=params['enthusiasm_intensity'])
+                update_job_status(job_id, 9, 76, "Vocal energy enhanced")
+            
+            update_job_status(job_id, 10, 78, "Cleaning up audio glitches...")
+            y = remove_artifacts(y, sr)
+            update_job_status(job_id, 10, 82, "Audio artifacts removed")
+            
+            update_job_status(job_id, 11, 84, "Applying dynamic compression...")
+            y = apply_compression(
+                y,
+                threshold=params.get('compression_threshold', 0.7),
+                ratio=params.get('compression_ratio', 4.0),
+                sr=sr
+            )
+            update_job_status(job_id, 11, 88, "Dynamics balanced")
+            
+            if any([params.get('low_gain', 0), params.get('mid_gain', 0), params.get('high_gain', 0)]):
+                update_job_status(job_id, 12, 90, "Applying EQ adjustments...")
+                y = apply_eq(
+                    y, sr,
+                    low_gain=params.get('low_gain', 0),
+                    mid_gain=params.get('mid_gain', 0),
+                    high_gain=params.get('high_gain', 0)
+                )
+                update_job_status(job_id, 12, 93, "Frequency balance optimized")
+            
+            update_job_status(job_id, 13, 95, "Normalizing audio levels...")
+            y_max = np.max(np.abs(y))
+            if y_max > 0:
+                y = y * (0.95 / y_max)
+            
+            update_job_status(job_id, 14, 97, "Encoding final audio...")
+            
+            beats_level = int(params.get('beats_level', 0))
+            print(f"[{job_id}] Beats level: {beats_level}, Music type: {music_type}")
+            
+            if beats_level > 0:
+                update_job_status(job_id, 14, 98, "Generating beat...")
+                
+                # Save temp processed vocal for mixing
+                temp_vocal_path = output_path.rsplit('.', 1)[0] + '_temp_vocal.wav'
+                sf.write(temp_vocal_path, y, sr)
+                print(f"[{job_id}] Saved temp vocal to {temp_vocal_path}")
+                
+                try:
+                    bg = BeatGenerator(
+                        vocal_path=temp_vocal_path,
+                        style=music_type,
+                        intensity=beats_level
+                    )
+                    print(f"[{job_id}] Initialized BeatGenerator with style={music_type}")
+                    bg.mix_tracks(output_path)
+                    print(f"[{job_id}] Beat generation and mixing successful")
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    print(f"Beat generation failed: {e}")
+                    # Fallback to just saving vocals
+                    sf.write(output_path, y, sr)
+                finally:
+                    if os.path.exists(temp_vocal_path):
+                        os.remove(temp_vocal_path)
+            else:
                 sf.write(output_path, y, sr)
-            finally:
-                if os.path.exists(temp_vocal_path):
-                    os.remove(temp_vocal_path)
-        else:
-            sf.write(output_path, y, sr)
         
         if converted_path and os.path.exists(converted_path):
             os.remove(converted_path)
