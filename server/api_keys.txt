@@ -1,0 +1,11 @@
+# API Keys for Audio Enhancement
+# Copy this file and rename it to .env, or set these as environment variables
+# 
+# IMPORTANT: Do not commit API keys to version control!
+
+# OpenAI API Key (for Whisper transcription and analysis)
+OPENAI_API_KEY=sk_41b19183c36ccf2b0cdf6dd17b056a9d050f2841c5ee2fc1
+
+# ElevenLabs API Key (for professional voice enhancement)
+# ELEVENLABS_API_KEY=your_elevenlabs_key_here
+
