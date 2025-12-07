@@ -1105,10 +1105,10 @@ class AudioProcessor:
         bass = self.apply_sidechain(drums, bass, amount=0.6)
         chords = self.apply_sidechain(drums, chords, amount=0.4)
 
-        vocal_level = 0.7
-        drum_level = 0.35 # Reduced drums
-        bass_level = 0.3 # Reduced bass
-        chord_level = 0.2 # Reduced chords
+        vocal_level = 1.0
+        drum_level = 0.25 # Reduced drums
+        bass_level = 0.2 # Reduced bass
+        chord_level = 0.15 # Reduced chords
         
         # Summing
         final_mix = (

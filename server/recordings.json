@@ -1,5 +1,63 @@
 [
   {
+    "id": "4eff837c",
+    "date": "2025-12-06",
+    "time": "16:01",
+    "type": "CRAZY",
+    "duration": "0:12",
+    "original_file": "4eff837c_original_recording.webm",
+    "processed_file": "4eff837c_processed.wav",
+    "settings": {
+      "autotune_strength": 0.0,
+      "scale": "chromatic",
+      "low_gain": 0,
+      "mid_gain": 0,
+      "high_gain": 0,
+      "compression_threshold": 0.6,
+      "compression_ratio": 3.0,
+      "enthusiasm_intensity": 0,
+      "clarity_intensity": 0.0,
+      "noise_reduction": 0.54,
+      "beats_level": 3
+    },
+    "stats": {
+      "key": "C# Minor",
+      "tempo": 80,
+      "tempo_stability": "Steady",
+      "pitch_tendency": "Unknown",
+      "pitch_offset": 0
+    }
+  },
+  {
+    "id": "78fc7cce",
+    "date": "2025-12-06",
+    "time": "16:00",
+    "type": "CRAZY",
+    "duration": "0:21",
+    "original_file": "78fc7cce_original_recording.webm",
+    "processed_file": "78fc7cce_processed.wav",
+    "settings": {
+      "autotune_strength": 0.0,
+      "scale": "chromatic",
+      "low_gain": 0,
+      "mid_gain": 0,
+      "high_gain": 0,
+      "compression_threshold": 0.6,
+      "compression_ratio": 3.0,
+      "enthusiasm_intensity": 0,
+      "clarity_intensity": 0.0,
+      "noise_reduction": 0.54,
+      "beats_level": 3
+    },
+    "stats": {
+      "key": "A Minor",
+      "tempo": 112,
+      "tempo_stability": "Dragging (Slowing down)",
+      "pitch_tendency": "Unknown",
+      "pitch_offset": 0
+    }
+  },
+  {
     "id": "a9bcf42b",
     "date": "2025-12-06",
     "time": "15:56",
