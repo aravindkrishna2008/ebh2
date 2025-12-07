@@ -393,7 +393,7 @@ const Camera = () => {
                   <div className="h-px flex-1 bg-[#111]/10 ml-4"></div>
                 </div>
                 <div className="flex gap-2 p-1 bg-[#EAE8E0] rounded-xl">
-                  {["rap", "chill", "crazy"].map((type) => (
+                  {["rap", "chill", "ionic"].map((type) => (
                     <button
                       key={type}
                       onClick={() =>

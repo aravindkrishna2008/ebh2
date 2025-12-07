@@ -254,9 +254,7 @@ def apply_crazy_effects(y, sr):
             Limiter(threshold_db=-1.0)
         ])
         
-        # Pedalboard expects (channels, samples) or just samples if mono
-        # y is (samples,)
-        # It returns the same shape usually
+       
         processed = board(y, sr)
         return processed
     except Exception as e:
@@ -298,14 +296,12 @@ def fast_autotune(y, sr, strength=0.4, scale='chromatic', root_note=440, update_
     corrected_pitches = np.array([d[0] for d in corrected_data])
     correction_amounts = np.array([d[1] for d in corrected_data])
     
-    # Analysis for Stats
     pitch_ratios_raw = valid_smoothed / corrected_pitches
     deviations_cents = 1200 * np.log2(pitch_ratios_raw)
     
     avg_deviation = np.mean(deviations_cents)
     abs_deviation = np.mean(np.abs(deviations_cents))
     
-    # Analyze tendency
     if avg_deviation > 3.5:
         tendency = "Sharp (Out of Tune)"
     elif avg_deviation > 1.0:
@@ -391,11 +387,9 @@ def detect_key(y, sr):
         chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
         chroma_vals = np.mean(chroma, axis=1)
         
-        # Simple template matching
         major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
         minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
         
-        # Normalize
         major_profile /= np.max(major_profile)
         minor_profile /= np.max(minor_profile)
         chroma_vals /= np.max(chroma_vals)
@@ -405,7 +399,6 @@ def detect_key(y, sr):
         best_key = "Unknown"
         
         for i in range(12):
-            # Roll profiles to check each key
             score_major = np.corrcoef(chroma_vals, np.roll(major_profile, i))[0, 1]
             score_minor = np.corrcoef(chroma_vals, np.roll(minor_profile, i))[0, 1]
             
@@ -424,10 +417,8 @@ def detect_key(y, sr):
 
 def analyze_tempo_stability(y, sr):
     try:
-        # Use simple beat tracking to find tempo drift
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
         
-        # Ensure tempo is a float
         if isinstance(tempo, np.ndarray):
             tempo = float(tempo)
             
@@ -437,7 +428,6 @@ def analyze_tempo_stability(y, sr):
         beat_times = librosa.frames_to_time(beat_frames, sr=sr)
         ibis = np.diff(beat_times)
         
-        # Calculate slope of IBIs
         x = np.arange(len(ibis))
         if len(x) > 1:
             slope, _ = np.polyfit(x, ibis, 1)
@@ -479,12 +469,10 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         
         update_job_status(job_id, 2, 15, "Audio loaded into memory")
         
-        # Analysis Pre-Processing
         update_job_status(job_id, 2, 16, "Analyzing performance...")
         detected_key = detect_key(y, sr)
         detected_tempo, tempo_stability = analyze_tempo_stability(y, sr)
         
-        # If tempo detected is 0, try beat_track again with looser parameters or default to 120
         if detected_tempo == 0:
             print(f"[{job_id}] Initial tempo detection failed (0 BPM). Retrying...")
             try:
@@ -502,7 +490,6 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         detected_tempo = int(detected_tempo) 
         print(f"[{job_id}] Final detected tempo: {detected_tempo} BPM")
                 
-        # Calculate pitch stats BEFORE processing (on original audio)
         pitch_stats = {}
         try:
             if params.get('autotune_strength', 0) > 0:
@@ -515,24 +502,20 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         except Exception as e:
             print(f"Pitch stats analysis failed: {e}")
         
-        # --- CRAZY MODE BRANCH ---
         if music_type == 'crazy':
             update_job_status(job_id, 5, 40, "Running Crazy Mode generation...")
             print(f"[{job_id}] Starting Crazy Mode (using voicemain.py)...")
             
-            # process_mp3 handles its own pipeline.
             process_mp3(input_path, output_path)
             
             update_job_status(job_id, 14, 98, "Crazy Mode generation complete")
             
-            # Reload processed audio for duration and consistency
             if os.path.exists(output_path):
                 y, sr = librosa.load(output_path, sr=None, mono=True)
             else:
                 raise Exception("Crazy mode generation failed to produce output file.")
                 
         else:
-            # --- STANDARD MODE BRANCH ---
             noise_intensity = params.get('noise_reduction', 0.5)
             if noise_intensity > 0:
                 update_job_status(job_id, 3, 18, "Analyzing background noise...")
@@ -541,9 +524,6 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
             
             update_job_status(job_id, 4, 28, "Analyzing vocal frequencies...")
             
-            # Crazy effects block inside standard pipeline is now redundant if music_type='crazy' is handled above
-            # But just in case someone passes 'crazy' without triggering the branch (unlikely with this logic)
-            # Actually, I removed 'crazy' logic from here since it's handled in the branch.
             y = enhance_clarity(y, sr, preserve_details=True, intensity=params.get('clarity_intensity', 0.8))
             update_job_status(job_id, 4, 35, "Vocal clarity enhanced")
             
@@ -610,7 +590,6 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
             if beats_level > 0:
                 update_job_status(job_id, 14, 98, "Generating beat...")
                 
-                # Save temp processed vocal for mixing
                 temp_vocal_path = output_path.rsplit('.', 1)[0] + '_temp_vocal.wav'
                 sf.write(temp_vocal_path, y, sr)
                 print(f"[{job_id}] Saved temp vocal to {temp_vocal_path}")
@@ -628,7 +607,6 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
                     import traceback
                     traceback.print_exc()
                     print(f"Beat generation failed: {e}")
-                    # Fallback to just saving vocals
                     sf.write(output_path, y, sr)
                 finally:
                     if os.path.exists(temp_vocal_path):
@@ -644,7 +622,6 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         seconds = int(duration % 60)
         duration_str = f"{minutes}:{seconds:02d}"
         
-        # Stats Assembly
         analysis_stats = {
             'key': detected_key,
             'tempo': detected_tempo,
@@ -664,7 +641,7 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
             'original_file': input_filename,
             'processed_file': output_filename,
             'settings': params,
-            'stats': analysis_stats # Save stats
+            'stats': analysis_stats
         }
         metadata.insert(0, new_record)
         save_metadata(metadata)
@@ -672,7 +649,7 @@ def process_recording_with_progress(job_id, input_path, output_path, params, mus
         update_job_status(job_id, 15, 100, "Ready to play!")
         processing_jobs[job_id]['status'] = 'complete'
         processing_jobs[job_id]['duration'] = duration_str
-        processing_jobs[job_id]['stats'] = analysis_stats # Send stats to client
+        processing_jobs[job_id]['stats'] = analysis_stats 
         print(f"[{job_id}] Processing complete! Duration: {duration_str}")
         
     except Exception as e:
@@ -746,7 +723,7 @@ def get_progress(job_id):
             
             if job['status'] == 'complete':
                 data['duration'] = job.get('duration', '')
-                data['stats'] = job.get('stats', {}) # Send stats
+                data['stats'] = job.get('stats', {}) 
                 print(f"[{job_id}] Sending complete status via SSE")
             elif job['status'] == 'error':
                 data['error'] = job.get('error', 'Unknown error')
